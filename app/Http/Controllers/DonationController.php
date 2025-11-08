@@ -4,33 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Models\Donor;
 use App\Models\Donation;
-use App\Models\Campaign;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Mail;
 
 class DonationController extends Controller
 {
     /**
      * Display the donation form
      */
-    public function index($campaignSlug = null)
+    public function index()
     {
-        // Load campaign by slug or get default
-        if ($campaignSlug) {
-            $campaign = Campaign::where('slug', $campaignSlug)
-                ->where('is_active', true)
-                ->firstOrFail();
-        } else {
-            $campaign = Campaign::getDefault();
-            
-            if (!$campaign) {
-                abort(404, 'No active campaign found. Please contact the administrator.');
-            }
-        }
-        
-        return view('donation.form', compact('campaign'));
+        return view('donation.form');
     }
 
     /**
@@ -63,25 +47,9 @@ class DonationController extends Controller
     /**
      * Store a new donation
      */
-    public function store(Request $request, $campaignSlug = null)
+    public function store(Request $request)
     {
-        // Load campaign by slug or get default
-        if ($campaignSlug) {
-            $campaign = Campaign::where('slug', $campaignSlug)
-                ->where('is_active', true)
-                ->firstOrFail();
-        } else {
-            $campaign = Campaign::getDefault();
-            
-            if (!$campaign) {
-                return back()->withErrors(['error' => 'No active campaign found.'])->withInput();
-            }
-        }
-        // Debug: Log incoming data
-        \Log::info('Donation submission data:', $request->all());
-        
         $request->validate([
-            // Personal Information
             'name' => 'required|string|max:255',
             'email' => 'required|email|max:255',
             'phone' => 'required|string|max:20',
@@ -89,13 +57,9 @@ class DonationController extends Controller
             'city' => 'required|string|max:100',
             'state' => 'required|string|max:50',
             'zip' => 'required|string|max:20',
-            
-            // Donation Details
             'amount' => 'required|numeric|min:1',
             'donation_type' => 'required|in:zakat,sadaqah,general',
             'payment_method' => 'required|in:cash,check,online',
-            
-            // Check Payment Fields (conditional)
             'check_number' => 'required_if:payment_method,check|nullable|string|max:100',
             'check_photo' => 'nullable|required_if:payment_method,check|image|mimes:jpeg,png,jpg|max:5120',
             'bank_name' => 'nullable|string|max:255',
@@ -106,7 +70,6 @@ class DonationController extends Controller
         try {
             DB::beginTransaction();
 
-            // Find or create donor
             $donor = Donor::firstOrCreate(
                 ['email' => $request->email],
                 [
@@ -119,7 +82,6 @@ class DonationController extends Controller
                 ]
             );
 
-            // Update donor info if exists
             if (!$donor->wasRecentlyCreated) {
                 $donor->update([
                     'name' => $request->name,
@@ -131,86 +93,44 @@ class DonationController extends Controller
                 ]);
             }
 
-            // Prepare donation data
             $donationData = [
                 'donor_id' => $donor->id,
-                'campaign_id' => $campaign->id,
                 'amount' => $request->amount,
                 'donation_type' => $request->donation_type,
                 'payment_method' => $request->payment_method,
-                'payment_status' => $request->payment_method === 'online' ? 'pending' : 'pending',
+                'payment_status' => 'pending',
             ];
 
-            // Handle check payment
             if ($request->payment_method === 'check') {
                 $donationData['check_number'] = $request->check_number;
                 $donationData['bank_name'] = $request->bank_name;
                 $donationData['account_number'] = $request->account_number;
                 $donationData['routing_number'] = $request->routing_number;
 
-                // Store check photo
                 if ($request->hasFile('check_photo')) {
                     $path = $request->file('check_photo')->store('checks', 'public');
                     $donationData['check_photo'] = $path;
                 }
             }
 
-            // Create donation
             $donation = Donation::create($donationData);
 
             DB::commit();
 
-            // Handle different payment methods
             switch ($request->payment_method) {
                 case 'cash':
-                    return $this->handleCashPayment($donation);
-                    
+                    return redirect()->route('donation.confirmation', $donation->id);
                 case 'check':
-                    return $this->handleCheckPayment($donation);
-                    
+                    return redirect()->route('donation.confirmation', $donation->id);
                 case 'online':
-                    return $this->handleOnlinePayment($donation, $request);
+                    return redirect()->route('donation.payment', $donation->id);
             }
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
-            // Log the actual error for debugging
             \Log::error('Donation Error: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
-            
-            return back()->withErrors([
-                'error' => 'An error occurred while processing your donation. Error: ' . $e->getMessage()
-            ])->withInput();
+            return back()->withErrors(['error' => 'An error occurred'])->withInput();
         }
-    }
-
-    /**
-     * Handle cash payment
-     */
-    protected function handleCashPayment($donation)
-    {
-        return redirect()->route('donation.confirmation', $donation->id)
-            ->with('success', 'Thank you! Your cash donation has been recorded. Please complete your payment at our office.');
-    }
-
-    /**
-     * Handle check payment
-     */
-    protected function handleCheckPayment($donation)
-    {
-        return redirect()->route('donation.confirmation', $donation->id)
-            ->with('success', 'Thank you! Your check donation has been recorded. We will process it shortly.');
-    }
-
-    /**
-     * Handle online payment (Stripe)
-     */
-    protected function handleOnlinePayment($donation, $request)
-    {
-        // For now, redirect to payment page
-        // We'll implement Stripe integration in next step
-        return redirect()->route('donation.payment', $donation->id);
     }
 
     /**
@@ -219,12 +139,11 @@ class DonationController extends Controller
     public function confirmation($id)
     {
         $donation = Donation::with('donor')->findOrFail($id);
-        
         return view('donation.confirmation', compact('donation'));
     }
 
     /**
-     * Show payment page for online donations
+     * Show payment page
      */
     public function payment($id)
     {
@@ -235,5 +154,55 @@ class DonationController extends Controller
         }
         
         return view('donation.payment', compact('donation'));
+    }
+
+    /**
+     * Process Stripe payment
+     */
+    public function processPayment(Request $request, $id)
+    {
+        $donation = Donation::findOrFail($id);
+
+        $request->validate([
+            'payment_method_id' => 'required|string',
+        ]);
+
+        try {
+            \Stripe\Stripe::setApiKey(env('STRIPE_SECRET'));
+
+            $paymentIntent = \Stripe\PaymentIntent::create([
+                'amount' => $donation->amount * 100, // Convert to cents
+                'currency' => 'usd',
+                'payment_method' => $request->payment_method_id,
+                'confirm' => true,
+                'description' => 'Donation - ' . $donation->donation_type_name,
+                'metadata' => [
+                    'donation_id' => $donation->id,
+                    'donor_email' => $donation->donor->email,
+                ],
+                'automatic_payment_methods' => [
+                    'enabled' => true,
+                    'allow_redirects' => 'never'
+                ],
+            ]);
+
+            if ($paymentIntent->status === 'succeeded') {
+                $donation->update([
+                    'payment_status' => 'completed',
+                    'transaction_id' => $paymentIntent->id,
+                ]);
+
+                return redirect()->route('donation.confirmation', $donation->id)
+                    ->with('success', 'Payment successful! Thank you for your donation.');
+            } else {
+                return back()->withErrors(['error' => 'Payment failed. Please try again.']);
+            }
+
+        } catch (\Stripe\Exception\CardException $e) {
+            return back()->withErrors(['error' => $e->getError()->message]);
+        } catch (\Exception $e) {
+            \Log::error('Stripe Error: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Payment processing error']);
+        }
     }
 }

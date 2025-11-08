@@ -41,7 +41,9 @@
                     <a href="{{ route('donation.form') }}" target="_blank" class="text-sm hover:text-gray-300">
                         View Donation Form →
                     </a>
-                    <span class="text-sm">{{ auth()->user()->name ?? auth()->user()->email }}</span>
+                    <a href="{{ route('admin.profile') }}" class="text-sm hover:text-gray-300 {{ request()->routeIs('admin.profile') ? 'font-bold' : '' }}">
+                        👤 {{ auth()->user()->name ?? auth()->user()->email }}
+                    </a>
                     <form action="{{ route('admin.logout') }}" method="POST" class="inline">
                         @csrf
                         <button type="submit" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm">

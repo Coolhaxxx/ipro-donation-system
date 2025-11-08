@@ -7,6 +7,7 @@ use App\Models\Donor;
 use App\Models\Donation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 
 class DashboardController extends Controller
 {
@@ -144,5 +145,45 @@ class DashboardController extends Controller
         $donation->update(['payment_status' => $request->status]);
 
         return back()->with('success', 'Donation status updated successfully!');
+    }
+
+    /**
+     * Show admin profile
+     */
+    public function profile()
+    {
+        $user = auth()->user();
+        return view('admin.profile', compact('user'));
+    }
+
+    /**
+     * Update admin profile
+     */
+    public function updateProfile(Request $request)
+    {
+        $user = auth()->user();
+
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|max:255|unique:users,email,' . $user->id,
+            'current_password' => 'nullable|required_with:new_password',
+            'new_password' => 'nullable|min:6|confirmed',
+        ]);
+
+        // Update name and email
+        $user->name = $request->name;
+        $user->email = $request->email;
+
+        // Update password if provided
+        if ($request->filled('new_password')) {
+            if (!Hash::check($request->current_password, $user->password)) {
+                return back()->withErrors(['current_password' => 'Current password is incorrect']);
+            }
+            $user->password = bcrypt($request->new_password);
+        }
+
+        $user->save();
+
+        return back()->with('success', 'Profile updated successfully!');
     }
 }
