@@ -1,0 +1,120 @@
+1. User Interface & Experience (UI/UX):
+
+Device Compatibility: The web app must be fully responsive and functional on desktop, tablet, and mobile devices.
+
+Simple Navigation: The layout will be intuitive with clearly defined sections for user information, donation selection, and payment.
+
+2. Client Information:
+
+The form will collect the following mandatory client details:
+
+Name: Full name of the donor.
+
+Address: Residential or mailing address.
+
+Phone Number: Valid phone number.
+
+Email Address: Valid email address.
+
+3. Payment Method Selection:
+
+Clients can choose from the following payment options:
+
+Cash:
+
+The user will select "Cash" as a payment method.
+
+A confirmation page will appear informing the user of the chosen payment method (Cash).
+
+Cheque:
+
+If the user selects "Cheque," they will be prompted to take a photo of the cheque via their device's camera.
+
+The photo of the cheque will be uploaded and linked to the donation for record-keeping purposes.
+
+Online Payment:
+
+If the user chooses "Online Payment," they will be directed to an integrated Stripe payment gateway where they can enter credit card information securely and complete the donation immediately.
+
+Stripe Integration:
+
+Integration with Stripe for online payments will be required. The user will need to enter card details such as:
+
+Credit/Debit card number
+
+Expiry date
+
+CVV code
+
+After the transaction is completed, the user will receive a confirmation notification.
+
+4. Donation Amount & Type:
+
+Predefined Donation Amounts:
+The application will feature predefined pledge amounts for common donations, such as:
+
+Zakat
+
+Sadaqa
+
+General Donations
+
+Custom Donation Option:
+A field will be available for users to enter a custom amount if they prefer not to select a predefined amount.
+
+Donation Categories:
+Users will be able to specify the purpose of their donation:
+
+Zakat: A section for donors to donate Zakat (Charity).
+
+Sadaqa: A section for donors to donate Sadaqa (Voluntary Charity).
+
+General Donation: A section for general charitable donations.
+
+5. Unique Identification (ID):
+
+The system will use Email Address or Phone Number as unique identifiers.
+
+If the user has donated previously, their details will auto-populate in the form when their email or phone number is entered.
+
+This feature will save time for repeat donors and enhance user experience.
+
+If the user is new, they will need to fill out all required information manually.
+
+6. Backend Requirements:
+
+Database: A secure database to store donor information, transaction records, and donation types.
+
+Store details such as:
+
+User information (name, email, phone, address)
+
+Donation details (amount, type)
+
+Payment status (Cash, Cheque, Online)
+
+Transaction history (if applicable)
+
+Security:
+
+Data Encryption: All user data must be securely encrypted.
+
+Payment Gateway Security: Ensure Stripe integration complies with PCI DSS (Payment Card Industry Data Security Standard) for safe online transactions.
+
+User Data Protection: Use HTTPS for secure data transmission, ensuring user details remain private.
+
+7. Admin Dashboard (Optional):
+
+An admin interface could be implemented to monitor:
+
+Donation Records: View and filter donation data by type, amount, and user.
+
+Transaction Status: Track payments that have been processed successfully, as well as pending or failed payments.
+
+Generate Reports: Download reports for accounting and auditing purposes.
+
+8. Notifications:
+
+Email Confirmation: Once a donation is made, the user will receive an email receipt containing the donation details, including the amount, method, and purpose.
+
+Admin Notification: Admin will receive a notification whenever a new donation is received.
