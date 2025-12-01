@@ -145,6 +145,9 @@ class DonationController extends Controller
     /**
      * Show payment page
      */
+    /**
+     * Show payment page
+     */
     public function payment($id)
     {
         $donation = Donation::with('donor')->findOrFail($id);
@@ -152,39 +155,40 @@ class DonationController extends Controller
         if ($donation->payment_method !== 'online') {
             return redirect()->route('donation.confirmation', $donation->id);
         }
+
+        // Create PaymentIntent
+        \Stripe\Stripe::setApiKey(env('STRIPE_SECRET'));
+
+        $paymentIntent = \Stripe\PaymentIntent::create([
+            'amount' => $donation->amount * 100,
+            'currency' => 'usd',
+            'automatic_payment_methods' => [
+                'enabled' => true,
+            ],
+            'description' => 'Donation - ' . $donation->donation_type_name,
+            'metadata' => [
+                'donation_id' => $donation->id,
+                'donor_email' => $donation->donor->email,
+            ],
+        ]);
         
-        return view('donation.payment', compact('donation'));
+        return view('donation.payment', [
+            'donation' => $donation,
+            'clientSecret' => $paymentIntent->client_secret
+        ]);
     }
 
     /**
-     * Process Stripe payment
+     * Process Stripe payment return
      */
     public function processPayment(Request $request, $id)
     {
         $donation = Donation::findOrFail($id);
-
-        $request->validate([
-            'payment_method_id' => 'required|string',
-        ]);
-
-        try {
+        
+        // This is now the return URL handler
+        if ($request->payment_intent_client_secret) {
             \Stripe\Stripe::setApiKey(env('STRIPE_SECRET'));
-
-            $paymentIntent = \Stripe\PaymentIntent::create([
-                'amount' => $donation->amount * 100, // Convert to cents
-                'currency' => 'usd',
-                'payment_method' => $request->payment_method_id,
-                'confirm' => true,
-                'description' => 'Donation - ' . $donation->donation_type_name,
-                'metadata' => [
-                    'donation_id' => $donation->id,
-                    'donor_email' => $donation->donor->email,
-                ],
-                'automatic_payment_methods' => [
-                    'enabled' => true,
-                    'allow_redirects' => 'never'
-                ],
-            ]);
+            $paymentIntent = \Stripe\PaymentIntent::retrieve($request->payment_intent);
 
             if ($paymentIntent->status === 'succeeded') {
                 $donation->update([
@@ -194,15 +198,10 @@ class DonationController extends Controller
 
                 return redirect()->route('donation.confirmation', $donation->id)
                     ->with('success', 'Payment successful! Thank you for your donation.');
-            } else {
-                return back()->withErrors(['error' => 'Payment failed. Please try again.']);
             }
-
-        } catch (\Stripe\Exception\CardException $e) {
-            return back()->withErrors(['error' => $e->getError()->message]);
-        } catch (\Exception $e) {
-            \Log::error('Stripe Error: ' . $e->getMessage());
-            return back()->withErrors(['error' => 'Payment processing error']);
         }
+
+        return redirect()->route('donation.payment', $id)
+            ->withErrors(['error' => 'Payment failed or was cancelled.']);
     }
 }

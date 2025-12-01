@@ -43,9 +43,12 @@
                     @csrf
                     
                     <div class="mb-4">
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">Card Information</label>
-                        <div id="card-element" class="p-3 border rounded-lg bg-gray-50"></div>
-                        <div id="card-errors" class="text-red-500 text-sm mt-2"></div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Payment Details</label>
+                        <!-- Stripe Payment Element -->
+                        <div id="payment-element" class="mb-4"></div>
+                        
+                        <!-- Error Messages -->
+                        <div id="error-message" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-4"></div>
                     </div>
 
                     <div class="mb-4">
@@ -76,64 +79,74 @@
 <script src="https://js.stripe.com/v3/"></script>
 <script>
     const stripe = Stripe('{{ env('STRIPE_KEY') }}');
-    const elements = stripe.elements();
-    
-    const cardElement = elements.create('card', {
-        style: {
-            base: {
-                fontSize: '16px',
-                color: '#32325d',
-                '::placeholder': {
-                    color: '#aab7c4'
-                }
-            }
-        }
-    });
-    
-    cardElement.mount('#card-element');
-    
-    cardElement.on('change', function(event) {
-        const displayError = document.getElementById('card-errors');
-        if (event.error) {
-            displayError.textContent = event.error.message;
-        } else {
-            displayError.textContent = '';
-        }
-    });
-    
+    const clientSecret = '{{ $clientSecret }}';
+
+    const options = {
+        clientSecret: clientSecret,
+        appearance: {
+            theme: 'stripe',
+            variables: {
+                colorPrimary: '#2563eb',
+            },
+        },
+    };
+
+    // Set up Stripe.js and Elements to use in checkout form
+    const elements = stripe.elements(options);
+
+    // Create and mount the Payment Element
+    const paymentElement = elements.create('payment');
+    paymentElement.mount('#payment-element');
+
     const form = document.getElementById('payment-form');
     const submitButton = document.getElementById('submit-button');
     const buttonText = document.getElementById('button-text');
     const spinner = document.getElementById('spinner');
-    
-    form.addEventListener('submit', async function(event) {
+
+    form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        
+
         submitButton.disabled = true;
         buttonText.classList.add('hidden');
         spinner.classList.remove('hidden');
-        
-        const {paymentMethod, error} = await stripe.createPaymentMethod({
-            type: 'card',
-            card: cardElement,
-            billing_details: {
-                name: '{{ $donation->donor->name }}',
-                email: '{{ $donation->donor->email }}',
-            }
+
+        const { error } = await stripe.confirmPayment({
+            //`elements` instance that was used to create the Payment Element
+            elements,
+            confirmParams: {
+                return_url: '{{ route("donation.process-payment", $donation->id) }}',
+                payment_method_data: {
+                    billing_details: {
+                        name: '{{ $donation->donor->name }}',
+                        email: '{{ $donation->donor->email }}',
+                        phone: '{{ $donation->donor->phone }}',
+                        address: {
+                            line1: '{{ $donation->donor->street_address }}',
+                            city: '{{ $donation->donor->city }}',
+                            state: '{{ $donation->donor->state }}',
+                            postal_code: '{{ $donation->donor->zip }}',
+                            country: 'US', // Assuming US for now based on fields
+                        }
+                    }
+                }
+            },
         });
-        
+
         if (error) {
-            document.getElementById('card-errors').textContent = error.message;
+            // This point will only be reached if there is an immediate error when
+            // confirming the payment. Show error to your customer (e.g., payment
+            // details incomplete)
+            const messageContainer = document.querySelector('#error-message');
+            messageContainer.textContent = error.message;
+            messageContainer.classList.remove('hidden');
+            
             submitButton.disabled = false;
             buttonText.classList.remove('hidden');
             spinner.classList.add('hidden');
         } else {
-            const hiddenInput = document.createElement('input');
-            hiddenInput.setAttribute('type', 'hidden');
-            hiddenInput.setAttribute('name', 'payment_method_id');
-            hiddenInput.setAttribute('value', paymentMethod.id);
-            form.appendChild(hiddenInput);
-            form.submit();
+            // Your customer will be redirected to your `return_url`. For some payment
+            // methods like iDEAL, your customer will be redirected to an intermediate
+            // site first to authorize the payment, then redirected to the `return_url`.
         }
     });
 </script>

@@ -159,9 +159,61 @@
                                 <!-- Check Photo Upload -->
                                 <div>
                                     <label class="block text-sm font-semibold text-gray-700 mb-2">UPLOAD CHECK PHOTO *</label>
-                                    <input type="file" name="check_photo" accept="image/*"
-                                        class="w-full px-4 py-2 border-2 border-blue-900 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                    <div class="flex gap-2">
+                                        <input type="file" name="check_photo" accept="image/*"
+                                            class="w-full px-4 py-2 border-2 border-blue-900 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <button type="button" @click="openCamera()" 
+                                            class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center whitespace-nowrap">
+                                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                            </svg>
+                                            Scan Check
+                                        </button>
+                                    </div>
                                     <p class="text-xs text-gray-500 mt-1">Take a photo of your check (max 5MB)</p>
+                                </div>
+
+                                <!-- Camera Modal -->
+                                <div x-show="showCameraModal" x-cloak 
+                                    class="fixed inset-0 z-50 overflow-y-auto" 
+                                    aria-labelledby="modal-title" role="dialog" aria-modal="true">
+                                    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                                        
+                                        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" 
+                                            @click="closeCamera()" aria-hidden="true"></div>
+
+                                        <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+
+                                        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg w-full">
+                                            <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                                                <div class="mt-3 text-center sm:mt-0 sm:text-left">
+                                                    <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+                                                        Scan Check
+                                                    </h3>
+                                                    <div class="mt-4 relative bg-black rounded-lg overflow-hidden aspect-video">
+                                                        <video x-ref="videoFeed" autoplay playsinline class="w-full h-full object-cover"></video>
+                                                        
+                                                        <!-- Guide Overlay -->
+                                                        <div class="absolute inset-0 border-2 border-white opacity-50 m-8 rounded pointer-events-none"></div>
+                                                        <div class="absolute bottom-4 left-0 right-0 text-center text-white text-sm font-semibold drop-shadow-md" x-text="scanStatus"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                                                <button type="button" @click="captureAndScan()" 
+                                                    :disabled="isScanning"
+                                                    class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50">
+                                                    <span x-show="!isScanning">Capture & Scan</span>
+                                                    <span x-show="isScanning">Processing...</span>
+                                                </button>
+                                                <button type="button" @click="closeCamera()" 
+                                                    class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <!-- Bank Information -->
@@ -313,6 +365,7 @@
 </div>
 
 @push('scripts')
+<script src='https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js'></script>
 <script>
 function donationForm() {
     return {
@@ -329,6 +382,12 @@ function donationForm() {
         paymentMethod: 'cash',
         selectedAmount: '500',
         customAmount: '',
+        
+        // Camera & OCR State
+        showCameraModal: false,
+        cameraStream: null,
+        isScanning: false,
+        scanStatus: 'Ready to scan',
         
         get finalAmount() {
             if (this.selectedAmount === 'custom') {
@@ -362,6 +421,114 @@ function donationForm() {
             } catch (error) {
                 console.error('Error checking donor:', error);
             }
+        },
+
+        // --- Camera & OCR Functions ---
+
+        async openCamera() {
+            this.showCameraModal = true;
+            this.scanStatus = 'Starting camera...';
+            try {
+                this.cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } // Prefer back camera on mobile
+                });
+                this.$refs.videoFeed.srcObject = this.cameraStream;
+                this.scanStatus = 'Align check within the frame';
+            } catch (err) {
+                console.error("Camera Error:", err);
+                this.scanStatus = 'Error: Could not access camera. Please allow permissions.';
+            }
+        },
+
+        closeCamera() {
+            this.showCameraModal = false;
+            if (this.cameraStream) {
+                this.cameraStream.getTracks().forEach(track => track.stop());
+                this.cameraStream = null;
+            }
+        },
+
+        async captureAndScan() {
+            this.isScanning = true;
+            this.scanStatus = 'Capturing image...';
+
+            const video = this.$refs.videoFeed;
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Convert to file for upload
+            canvas.toBlob((blob) => {
+                const file = new File([blob], "scanned_check.jpg", { type: "image/jpeg" });
+                
+                // Set file input manually
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                document.querySelector('input[name="check_photo"]').files = dataTransfer.files;
+            }, 'image/jpeg');
+
+            this.scanStatus = 'Reading text (this may take a moment)...';
+
+            try {
+                const result = await Tesseract.recognize(
+                    canvas,
+                    'eng',
+                    { logger: m => console.log(m) }
+                );
+
+                this.processScannedText(result.data.text);
+                this.scanStatus = 'Scan complete!';
+                setTimeout(() => this.closeCamera(), 1500);
+
+            } catch (err) {
+                console.error("OCR Error:", err);
+                this.scanStatus = 'Error reading text. Please try again.';
+            } finally {
+                this.isScanning = false;
+            }
+        },
+
+        processScannedText(text) {
+            console.log("Scanned Text:", text);
+            // Basic cleanup
+            const cleanText = text.replace(/[^a-zA-Z0-9\s\:\<\>]/g, '');
+
+            // Try to find MICR line data (Routing, Account, Check #)
+            // This is a basic heuristic and might need adjustment based on check format
+            
+            // Routing Number: Usually 9 digits bracketed by |: symbols (often read as T, :, or A by OCR)
+            const routingRegex = /[0-9]{9}/g;
+            const potentialNumbers = cleanText.match(routingRegex);
+
+            if (potentialNumbers) {
+                // Heuristic: Routing numbers often start with 0, 1, 2, 3
+                const routing = potentialNumbers.find(num => ['0','1','2','3'].includes(num[0]));
+                if (routing) document.querySelector('input[name="routing_number"]').value = routing;
+            }
+
+            // Attempt to find Account Number (variable length, usually follows routing)
+            // This is tricky with regex alone, but we can try to find long number strings
+            const accountRegex = /[0-9]{8,12}/g;
+            const potentialAccounts = cleanText.match(accountRegex);
+            
+            if (potentialAccounts) {
+                // Pick the longest one that isn't the routing number
+                const currentRouting = document.querySelector('input[name="routing_number"]').value;
+                const account = potentialAccounts.find(num => num !== currentRouting);
+                if (account) document.querySelector('input[name="account_number"]').value = account;
+            }
+
+            // Attempt to find Check Number (usually 3-6 digits, often at end or beginning)
+            const checkNumRegex = /\b[0-9]{3,6}\b/g;
+            const potentialCheckNums = cleanText.match(checkNumRegex);
+            if (potentialCheckNums) {
+                // Just pick the first one found for now
+                document.querySelector('input[name="check_number"]').value = potentialCheckNums[0];
+            }
+
+            alert("Scan complete! Please verify the auto-filled details.");
         }
     }
 }
